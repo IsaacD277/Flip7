@@ -6,7 +6,7 @@ Based on the game [Flip 7](https://theop.games/products/flip-7?srsltid=AfmBOoqKF
 This game is played in the console and only requires python to be installed.
 
 ## Getting Started
-1. Open the flip7.py file with python
+1. Open this website: [Flip 7 Online](https://isaacd2.pyscriptapps.com/flip-7/latest/) OR run the file locally on your computer.
 2. Select the number of players
 3. Input their names in turn order
 4. Choose whether you want to "cheat" and see your chances of busting each turn
