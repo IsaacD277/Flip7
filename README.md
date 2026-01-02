@@ -1,7 +1,7 @@
 # Flip 7
 Play along with a game of Flip 7 to easily keep track of player scores, as well as determine your chances of busting with each draw.
 
-Based on the game [Flip 7](https://theop.games/products/flip-7?srsltid=AfmBOoqKFcSsXR_gzwPF5m0WmrJCndbbAC45NuzLV37Fk3iATaWGR_9T), but not in any way affiliated with the OP Games.
+Based on the game [Flip 7](https://theop.games/products/flip-7?srsltid=AfmBOoqKFcSsXR_gzwPF5m0WmrJCndbbAC45NuzLV37Fk3iATaWGR_9T), but not in any way affiliated with The Op Games.
 
 This game is played in the console and only requires python to be installed.
 
