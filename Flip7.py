@@ -82,8 +82,8 @@ def main():
                         print("QUIT") if p["tolerance"] <= bustPercent else None
                         userInput = input(f"{p["name"]}, flip a card ({bustPercent}% chance of bust) or \"q\" for quit: ")
                     else:
-                        userInput = input(f"{p["name"]}, flip a card or \"q\" for quit: ")
-                    if userInput.lower() == 'q':
+                        userInput = input(f"{p["name"]}, flip a card or \"b\" for bank: ")
+                    if userInput.lower() == 'b':
                         score(p)
                         endRoundTurn(p)
                     else:
@@ -115,13 +115,13 @@ def main():
                 break
     print("_____________________________________")
     print("Final Scores:")
-    scores = {}
-    for p in players:
-        scores[p["score"]] = p["name"]
+    currentScores = players.copy()
+    currentScores.sort(reverse=True, key=myFunc) 
+    for p in currentScores:
         print(f"{p["name"]}: {p["score"]}")
-    winner = next(iter(dict(sorted(scores.items(), reverse=True)).values()))
+    winner = currentScores[0]
     print()
-    print(f"Winner: {winner}")
+    print(f"Winner: {winner["name"]}")
     print("_____________________________________")
     print()
     again = input("Play again? (y/n): ")
