@@ -230,20 +230,24 @@ def drawCard(card, p, flip = False):
 
 def secondChance(p):
     if p["hand"]["sc"] == True:
-        print("Already have one. Choose an active player to give it to: ")
         activePlayers = []
         for idx, p in enumerate(players):
             if p["active"] == True and p["hand"]["sc"] == False:
-                print(f"{idx + 1}. {p["name"]}")
                 activePlayers += str(idx + 1)
         if activePlayers == []:
             print("No active players left without a second chance. Discard the second chance.")
-        target = input()
-        if target in activePlayers:
-            players[int(target) - 1]["hand"]["sc"] == True
         else:
-            print("Try again. Not an active player: ")
-            secondChance()
+            print("Already have one. Choose an active player to give it to: ")
+            for idx, p in enumerate(players):
+                if p["active"] == True and p["hand"]["sc"] == False:
+                    print(f"{idx + 1}. {p["name"]}")
+                    activePlayers += str(idx + 1)
+            target = input()
+            if target in activePlayers:
+                players[int(target) - 1]["hand"]["sc"] == True
+            else:
+                print("Try again. Not an active player: ")
+                secondChance()
     p["hand"]["sc"] = True
 
 def freeze():
