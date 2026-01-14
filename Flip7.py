@@ -44,7 +44,7 @@ def init():
                 "numbers": [],
                 "addition": [],
                 "multiplier": False,
-                "sc": 0
+                "sc": False
             },
             "name": playerName,
             "score": 0,
@@ -102,7 +102,6 @@ def main():
                         endRoundTurn(p)
                     else:
                         drawCard(userInput, p)
-                        # CHECK FOR EMPTY DECK
                         reshuffle()
                         nextplayer = idx + 1
                         playerHand = p.get("hand").get("numbers")
@@ -113,10 +112,10 @@ def main():
                                 score(player)
                                 endRoundTurn(player)
                             break
+                    
                 if quitCount >= len(players):
                     round = False
                     break
-        
         for i in range(nextplayer):
             player = players.pop(0)
             players.append(player)
@@ -157,7 +156,8 @@ def reshuffle():
             for number in handNumbers:
                 deck[str(number)] -= 1
             handSC = p["hand"]["sc"]
-            deck["sc"] -= handSC
+            if handSC:
+                deck["sc"] -= 1
             handAdditions = p["hand"]["addition"]
             for number in handAdditions:
                 deck[f"+{str(number)}"] -= 1
@@ -183,7 +183,7 @@ def endRoundTurn(p):
         "numbers": [],
         "addition": [],
         "multiplier": False,
-        "sc": 0
+        "sc": True
     }
     p.__setitem__("hand", emptyHand)
     global quitCount
@@ -199,11 +199,12 @@ def drawCard(card, p, flip = False):
                 return "fr"
             freeze()
         elif card == "sc":
-            p["hand"]["sc"] += 1
+            secondChance(p)
         elif card in numbers:
             if int(card) in p["hand"]["numbers"]:
-                if p["hand"]["sc"] != 0:
-                    p["hand"]["sc"] -= 1
+                if p["hand"]["sc"] == True:
+                    p["hand"]["sc"] = False
+                    print("Saved by the second chance card!")
                 else:
                     print("Card already in hand. 0 points")
                     endRoundTurn(p)
@@ -227,49 +228,79 @@ def drawCard(card, p, flip = False):
             newCard = input("Try again: ")
         drawCard(newCard, p)
 
+def secondChance(p):
+    if p["hand"]["sc"] == True:
+        print("Already have one. Choose an active player to give it to: ")
+        activePlayers = []
+        for idx, p in enumerate(players):
+            if p["active"] == True and p["hand"]["sc"] == False:
+                print(f"{idx + 1}. {p["name"]}")
+                activePlayers += str(idx + 1)
+        if activePlayers == []:
+            print("No active players left without a second chance. Discard the second chance.")
+        target = input()
+        if target in activePlayers:
+            players[int(target) - 1]["hand"]["sc"] == True
+        else:
+            print("Try again. Not an active player: ")
+            secondChance()
+    p["hand"]["sc"] = True
+
 def freeze():
     print("Choose an active player to freeze:")
+    activePlayers = []
     for idx, p in enumerate(players):
         if p["active"] == True:
             print(f"{idx + 1}. {p["name"]}")
+            activePlayers += str(idx + 1)
 
     target = input()
-    score(players[int(target) - 1])
-    endRoundTurn(players[int(target) - 1])
+    if target in activePlayers:
+        score(players[int(target) - 1])
+        endRoundTurn(players[int(target) - 1])
+    else:
+        print("Try again. Not an active player: ")
+        freeze()
 
 def flipThree():
     print("Choose an active player to flip three:")
+    activePlayers = []
     for idx, p in enumerate(players):
         if p["active"] == True:
             print(f"{idx + 1}. {p["name"]}")
+            activePlayers += str(idx + 1)
 
     target = input()
-    targetPlayer = players[int(target) - 1]
-    remainingCards = []
-    for i in range(3):
-        if targetPlayer["active"]:
-            newCard = input(f"{targetPlayer["name"]}'s Card: ")
-            flippedCard = drawCard(newCard, targetPlayer, True)
-            remainingCards.append(flippedCard)
-            reshuffle()
-            if len(targetPlayer["hand"]["numbers"]) >= 7:
-                targetPlayer["hand"]["addition"].append(15)
-                round = False
-                for player in players:
-                    score(player)
-                    endRoundTurn(player)
-                break
-    for x in remainingCards:
-        if x == "fr":
-            freeze()
-        elif x == "f3":
-            flipThree()
+    if target in activePlayers:
+        targetPlayer = players[int(target) - 1]
+        remainingCards = []
+        for i in range(3):
+            if targetPlayer["active"]:
+                newCard = input(f"{targetPlayer["name"]}'s Card: ")
+                flippedCard = drawCard(newCard, targetPlayer, True)
+                remainingCards.append(flippedCard)
+                reshuffle()
+                if len(targetPlayer["hand"]["numbers"]) >= 7:
+                    targetPlayer["hand"]["addition"].append(15)
+                    round = False
+                    for player in players:
+                        score(player)
+                        endRoundTurn(player)
+                    break
+        for x in remainingCards:
+            if x == "fr":
+                freeze()
+            elif x == "f3":
+                flipThree()
+    else:
+        print("Try again. Not an active player: ")
+        flipThree()
 
 def analytics(p):
     cardsRemaining = 0
     bustCards = 0
-    if p["hand"]["sc"] > 0:
-        return 0
+    if p["hand"]["sc"] == True:
+        return 0.0
     for card in deck:
         cardsRemaining += deck[card]
     for card in p["hand"]["numbers"]:
