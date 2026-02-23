@@ -27,17 +27,64 @@ CARDS = {
     "-10": 1,
     "/2": 1
 }
-
+NUMBERS = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13"]
+SUBTRACTIONS = ["-2", "-4", "-6", "-8", "-10"]
 players = []
 
 quit_count = 0
 analytics_visible = False
 deck = {}
+import random
+random.choice(NUMBERS)
 
 def init():
     global analytics_visible
     global players
     global deck
+    # players = [
+    #     {
+    #         "id": 1,
+    #         "status": "active",  # active, stay, bust
+    #         "hand": {
+    #             "numbers": [],
+    #             "subtraction": [],
+    #             "divider": False,
+    #             "bonus": False,
+    #             "special": []  # holds reference to u7 and l13
+    #         },
+    #         "name": "Isaac",
+    #         "score": 0,
+    #         "tolerance": 100
+    #     },
+    #     {
+    #         "id": 2,
+    #         "status": "active",  # active, stay, bust
+    #         "hand": {
+    #             "numbers": [],
+    #             "subtraction": [],
+    #             "divider": False,
+    #             "bonus": False,
+    #             "special": []  # holds reference to u7 and l13
+    #         },
+    #         "name": "Andrew",
+    #         "score": 0,
+    #         "tolerance": 100
+    #     },
+    #     {
+    #         "id": 3,
+    #         "status": "active",  # active, stay, bust
+    #         "hand": {
+    #             "numbers": [],
+    #             "subtraction": [],
+    #             "divider": False,
+    #             "bonus": False,
+    #             "special": []  # holds reference to u7 and l13
+    #         },
+    #         "name": "Grace",
+    #         "score": 0,
+    #         "tolerance": 100
+    #     }
+    # ]
     players = []
     deck = CARDS.copy()
     number_of_players = input("Enter the number of players: ")
@@ -80,6 +127,7 @@ def init():
     print("*For Action cards, you must type the number of a non-busted player to apply the action to")
     print()
     print()
+    analytics_visible = False
 
 def main():
     global playing
@@ -93,10 +141,11 @@ def main():
         while current_round:
             for idx, p in enumerate(players):
                 if p.get("status") == "active":
-                    draw_card(p)
+                    card = draw_card(p)
                     # CHECK FOR EMPTY DECK
                     reshuffle()
-                    next_player = idx + 1
+                    if card != "stay":
+                        next_player = idx + 1
                     player_hand = p.get("hand").get("numbers")
                     if len(player_hand) >= 7:
                         p["hand"]["bonus"] = True
@@ -112,7 +161,7 @@ def main():
         for i in range(next_player):
             player = players.pop(0)
             players.append(player)
-
+        print_leaderboard()
         quit_count = 0
         for p in players:
             p["status"] = "active"
@@ -181,19 +230,25 @@ def reshuffle(in_play=None):
                 deck["/2"] -= 1
 
 def score(p):
-    player_numbers = p.get("hand").get("numbers")
+    player_numbers = p["hand"]["numbers"]
     round_score = sum(player_numbers)
+    if 14 in player_numbers:
+        round_score -= 1
     if p.get("hand").get("divider"):
         round_score -= round_score / 2
-    player_subtractions = p.get("hand").get("subtraction")
-    round_score -= sum(player_subtractions)
+    subtractions = []
+    for number in p["hand"]["subtraction"]:
+        subtractions.append(int(number[1:]))
+    round_score -= sum(subtractions)
     existing_score = p["score"]
-    p.__setitem__("score", round_score + existing_score)
+    if 0 in player_numbers and len(player_numbers) < 7:
+        round_score = 0
+    p["score"] = round_score + existing_score
     print(f"{p["name"]} scored {round_score} this round. Total: {existing_score + round_score}")
 
 def end_round_turn(p):
     print(f"Ending round for {p["name"]}")
-    p.__setitem__("active", False)
+    p["status"] = "bust"
     empty_hand = {
         "numbers": [],
         "subtraction": [],
@@ -201,21 +256,22 @@ def end_round_turn(p):
         "bonus": False,
         "special": [] # holds reference to u7 and l13
     }
-    p.__setitem__("hand", empty_hand)
+    p["hand"] = empty_hand
     global quit_count
     quit_count += 1
 
-def draw_card(p, flip = False):
+def draw_card(p, flip = False, force = False):
     if analytics_visible:
         bust_percent = analytics(p)
         print("QUIT") if p["tolerance"] <= bust_percent else None
         user_input = input(f"{p["name"]}, flip a card ({bust_percent}% chance of bust) or \"s\" for stay: ")
     else:
         user_input = input(f"{p["name"]}, flip a card or \"s\" for stay: ")
-    if user_input.lower() == 's':
-        score(p)
-        end_round_turn(p)
-        return ""
+    if not force:
+        if user_input.lower() == 's':
+            score(p)
+            end_round_turn(p)
+            return "stay"
     if user_input.lower() == 'lb':
         print_leaderboard(False)
         draw_card(p, flip)
@@ -238,7 +294,7 @@ def draw_card(p, flip = False):
         elif card.lower() == "steal":
             if flip:
                 return "steal"
-            steal()
+            steal(p)
             return ""
         elif card.lower() == "discard":
             if flip:
@@ -246,24 +302,43 @@ def draw_card(p, flip = False):
             discard()
             return ""
         elif card == "u7":
-            print("NOT IMPLEMENTED")
+            empty_hand = {
+                "numbers": [],
+                "subtraction": [],
+                "divider": False,
+                "bonus": False,
+                "special": []  # holds reference to u7 and l13
+            }
+            p["hand"] = empty_hand
+            p["hand"]["numbers"].append(int(7))
+            p["hand"]["special"].append("u7")
             return ""
         elif card == "l13":
-            print("NOT IMPLEMENTED")
+            p["hand"]["numbers"].append(13)
+            p["hand"]["special"].append("l13")
             return ""
         elif card in numbers:
             if int(card) in p["hand"]["numbers"]:
-                #TODO check for l13 in special hand
+                if card == "13" and ("l13" in p["hand"]["special"]):
+                    count = 0
+                    for i in p["hand"]["numbers"]:
+                        if i == 13:
+                            count += 1
+                    if count <= 1:
+                        p["hand"]["numbers"].append(int(13))
+                        return ""
                 print("Card already in hand. 0 points")
                 end_round_turn(p)
             else:
                 p["hand"]["numbers"].append(int(card))
             return ""
         elif card == "/2":
-            p["hand"]["divider"] = True
+            target_player = choose_player()
+            target_player["hand"]["divider"] = True
             return ""
         elif card in subtractions:
-            p["hand"]["subtraction"].append(int(card[1:]))
+            target_player = choose_player()
+            target_player["hand"]["subtraction"].append(card)
             return ""
         elif card == "f4":
             if flip:
@@ -283,78 +358,295 @@ def draw_card(p, flip = False):
         return ""
 
 def just_one_more():
-    print("Choose an active player to freeze:")
-    active_players = []
-    for idx, p in enumerate(players):
-        if p["status"] == "active" or "stay":
-            print(f"{idx + 1}. {p["name"]}")
-            active_players += str(idx + 1)
-    target = input()
-    if target == "lb":
-        print_leaderboard(False)
-        just_one_more()
-        return
-    if target in active_players:
-        score(players[int(target) - 1])
-        end_round_turn(players[int(target) - 1])
-    else:
-        print("Try again. Not an active player: ")
-        just_one_more()
+    print("Choose a player to freeze:")
+    target_player = choose_player()
+    draw_card(target_player, force = True)
+    score(target_player)
+    end_round_turn(target_player)
 
-def steal():
-    #TODO implement
-    print("NOT IMPLEMENTED")
+def steal(player):
+    if not check_active_players():
+        print("No active players")
+        return None
+
+    print("Choose a card to steal:")
+    target_player = choose_player()
+    if (target_player["status"] == "active") and (target_player != player):
+        active_cards = []
+        for card in target_player["hand"]["subtraction"]:
+            active_cards.append(card)
+        if target_player["hand"]["divider"]:
+            active_cards.append("/2")
+        special = target_player["hand"]["special"]
+        for card in special:
+            active_cards.append(card)
+        numbers = target_player["hand"]["numbers"]
+        if len(special) > 0:
+            for card in special:
+                for num in numbers:
+                    if card == "u7":
+                        if num == 7:
+                            numbers.remove(num)
+                            break
+                    if card == "l13":
+                        if num == 13:
+                            numbers.remove(num)
+                            break
+        for card in numbers:
+            active_cards.append(str(card))
+        print(f"What card will you steal? {active_cards}")
+        target_card = input()
+
+        if target_card in active_cards:
+            if target_card == "u7":
+                target_player["hand"]["special"].remove(target_card)
+                target_player["hand"]["numbers"].remove(7)
+                player["hand"]["numbers"] = []
+                player["hand"]["subtraction"] = []
+                player["hand"]["divider"] = False
+                player["hand"]["special"] = []
+                player["hand"]["special"].append(target_card)
+                player["hand"]["numbers"].append(7)
+            elif target_card == "l13":
+                target_player["hand"]["special"].remove(target_card)
+                target_player["hand"]["numbers"].remove(13)
+                player["hand"]["special"].append(target_card)
+                player["hand"]["numbers"].append(13)
+            elif target_card in NUMBERS:
+                target_player["hand"]["numbers"].remove(int(target_card))
+                player["hand"]["numbers"].append(int(target_card))
+            elif target_card in SUBTRACTIONS:
+                target_player["hand"]["subtraction"].remove(target_card)
+                player["hand"]["subtraction"].append(target_card)
+            elif target_card == "/2":
+                target_player["hand"]["divider"] = False
+                player["hand"]["divider"] = True
+        else:
+            return steal(player)
+    else:
+        return steal(player)
+    return None
+
+def check_active_players():
+    active_players = []
+    for p in players:
+        if p["status"] == "active" or "stay":
+            active_players.append(p)
+    return len(active_players)
+
+def check_active_cards():
+    active_cards = []
+    active_players = []
+    for p in players:
+        if p["status"] == "active" or "stay":
+            active_players.append(p)
+    for p in active_players:
+        for card in p["hand"]["subtraction"]:
+            active_cards.append(card)
+        if p["hand"]["divider"]:
+            active_cards.append("/2")
+        special = p["hand"]["special"]
+        numbers = p["hand"]["numbers"]
+        if len(special) > 0:
+            for card in special:
+                for num in numbers:
+                    if card == "u7":
+                        if num == 7:
+                            numbers.remove(num)
+                            break
+                    if card == "l13":
+                        if num == 13:
+                            numbers.remove(num)
+                            break
+        for card in numbers:
+            active_cards.append(str(card))
+    return len(active_cards)
 
 def discard():
-    #TODO implement
-    print("NOT IMPLEMENTED")
+    if not check_active_players():
+        print("No active players")
+        return None
+
+    print("Choose a player to make discard a card:")
+    target_player = choose_player()
+    if target_player["status"] == "active":
+        active_cards = []
+        for card in target_player["hand"]["subtraction"]:
+            active_cards.append(card)
+        if target_player["hand"]["divider"]:
+            active_cards.append("/2")
+        special = target_player["hand"]["special"]
+        for card in special:
+            active_cards.append(card)
+        numbers = target_player["hand"]["numbers"]
+        if len(special) > 0:
+            for card in special:
+                for num in numbers:
+                    if card == "u7":
+                        if num == 7:
+                            numbers.remove(num)
+                            break
+                    if card == "l13":
+                        if num == 13:
+                            numbers.remove(num)
+                            break
+        for card in numbers:
+            active_cards.append(str(card))
+        print(f"What card will you discard? {active_cards}")
+        target_card = input()
+
+        if target_card in active_cards:
+            if target_card == "u7":
+                target_player["hand"]["special"].remove(target_card)
+                target_player["hand"]["numbers"].remove(7)
+            elif target_card == "l13":
+                target_player["hand"]["special"].remove(target_card)
+                target_player["hand"]["numbers"].remove(13)
+            elif target_card in NUMBERS:
+                target_player["hand"]["numbers"].remove(int(target_card))
+            elif target_card in SUBTRACTIONS:
+                target_player["hand"]["subtraction"].remove(target_card)
+            elif target_card == "/2":
+                target_player["hand"]["divider"] = False
+        return True
+    return None
 
 def swap():
-    #TODO implement
-    print("NOT IMPLEMENTED")
+    if check_active_players() <= 1 or check_active_cards() <= 1:
+        print("Discard")
+        return None
+
+    print("Choose two players to swap a card:")
+    target_player_1 = choose_player()
+    target_player_2 = choose_player()
+    if target_player_1["status"] and target_player_2["status"] == "active" or "stay":
+        active_cards = []
+        for card in target_player_1["hand"]["subtraction"]:
+            active_cards.append(card)
+        if target_player_1["hand"]["divider"]:
+            active_cards.append("/2")
+        special = target_player_1["hand"]["special"]
+        for card in special:
+            active_cards.append(card)
+        numbers = target_player_1["hand"]["numbers"]
+        if len(special) > 0:
+            for card in special:
+                for num in numbers:
+                    if card == "u7":
+                        if num == 7:
+                            numbers.remove(num)
+                            break
+                    if card == "l13":
+                        if num == 13:
+                            numbers.remove(num)
+                            break
+        for card in numbers:
+            active_cards.append(str(card))
+        for card in target_player_2["hand"]["subtraction"]:
+            active_cards.append(card)
+        if target_player_2["hand"]["divider"]:
+            active_cards.append("/2")
+        special = target_player_2["hand"]["special"]
+        for card in special:
+            active_cards.append(card)
+        numbers = target_player_2["hand"]["numbers"]
+        if len(special) > 0:
+            for card in special:
+                for num in numbers:
+                    if card == "u7":
+                        if num == 7:
+                            numbers.remove(num)
+                            break
+                    if card == "l13":
+                        if num == 13:
+                            numbers.remove(num)
+                            break
+        for card in numbers:
+            active_cards.append(str(card))
+        print(f"What card will {target_player_1["name"]} give up? {active_cards}")
+        target_card_1 = input()
+        print(f"What card will {target_player_2["name"]} give up? {active_cards}")
+        target_card_2 = input()
+
+
+        if target_card_1 and target_card_2 in active_cards:
+            if target_card_1 == "u7":
+                target_player_1["hand"]["special"].remove(target_card_1)
+                target_player_1["hand"]["numbers"].remove(7)
+                target_player_2["hand"]["numbers"] = []
+                target_player_2["hand"]["subtraction"] = []
+                target_player_2["hand"]["divider"] = False
+                target_player_2["hand"]["special"] = []
+                target_player_2["hand"]["special"].append(target_card_1)
+                target_player_2["hand"]["numbers"].append(7)
+            elif target_card_1 == "l13":
+                target_player_1["hand"]["special"].remove(target_card_1)
+                target_player_1["hand"]["numbers"].remove(13)
+                target_player_2["hand"]["numbers"].append(int(13))
+                target_player_2["hand"]["special"].append(target_card_1)
+            elif target_card_1 in NUMBERS:
+                target_player_1["hand"]["numbers"].remove(int(target_card_1))
+                target_player_2["hand"]["numbers"].append(int(target_card_1))
+            elif target_card_1 in SUBTRACTIONS:
+                target_player_1["hand"]["subtraction"].remove(target_card_1)
+                target_player_2["hand"]["subtraction"].append(int(target_card_1))
+            elif target_card_1 == "/2":
+                target_player_1["hand"]["divider"] = False
+                target_player_2["hand"]["divider"] = True
+
+            if target_card_2 == "u7":
+                target_player_2["hand"]["special"].remove(target_card_1)
+                target_player_2["hand"]["numbers"].remove(7)
+                target_player_1["hand"]["numbers"] = []
+                target_player_1["hand"]["subtraction"] = []
+                target_player_1["hand"]["divider"] = False
+                target_player_1["hand"]["special"] = []
+                target_player_1["hand"]["special"].append(target_card_1)
+                target_player_1["hand"]["numbers"].append(7)
+            elif target_card_2 == "l13":
+                target_player_2["hand"]["special"].remove(target_card_1)
+                target_player_2["hand"]["numbers"].remove(13)
+                target_player_1["hand"]["numbers"].append(int(13))
+                target_player_1["hand"]["special"].append(target_card_1)
+            elif target_card_1 in NUMBERS:
+                target_player_2["hand"]["numbers"].remove(int(target_card_1))
+                target_player_1["hand"]["numbers"].append(int(target_card_1))
+            elif target_card_1 in SUBTRACTIONS:
+                target_player_2["hand"]["subtraction"].remove(target_card_1)
+                target_player_1["hand"]["subtraction"].append(int(target_card_1))
+            elif target_card_1 == "/2":
+                target_player_2["hand"]["divider"] = False
+                target_player_1["hand"]["divider"] = True
+        return True
+    return None
 
 def flip_four():
     print("Choose an active player to flip four:")
-    active_players = []
-    for idx, p in enumerate(players):
-        if p["active"] == "active" or "stay":
-            print(f"{idx + 1}. {p["name"]}")
-            active_players += str(idx + 1)
-
-    target = input()
-    if target == "lb":
-        print_leaderboard(False)
-        flip_four()
-        return
-    if target in active_players:
-        target_player = players[int(target) - 1]
-        remaining_cards = []
-        for i in range(3):
-            if target_player["active"]:
-                print(f"{target_player["name"]}'s Card: ")
-                flipped_card = draw_card(target_player, True)
-                remaining_cards.append(flipped_card)
-                reshuffle()
-                if len(target_player["hand"]["numbers"]) >= 7:
-                    target_player["hand"]["addition"].append(15)
-                    for player in players:
-                        score(player)
-                        end_round_turn(player)
-                    break
-        for x in remaining_cards:
-            if x == "jom":
-                just_one_more()
-            elif x == "swap":
-                swap()
-            elif x == "steal":
-                steal()
-            elif x == "discard":
-                discard()
-            elif x == "f4":
-                flip_four()
-    else:
-        print("Try again. Not an active player: ")
-        flip_four()
+    target_player = choose_player()
+    remaining_cards = []
+    for i in range(4):
+        if target_player["status"] == ("active" or "stay"):
+            print(f"{target_player["name"]}'s Card: ")
+            flipped_card = draw_card(target_player, True)
+            remaining_cards.append(flipped_card)
+            reshuffle()
+            if len(target_player["hand"]["numbers"]) >= 7:
+                target_player["hand"]["addition"].append(15)
+                for player in players:
+                    score(player)
+                    end_round_turn(player)
+                break
+    for x in remaining_cards:
+        if x == "jom":
+            just_one_more()
+        elif x == "swap":
+            swap()
+        elif x == "steal":
+            steal(target_player)
+        elif x == "discard":
+            discard()
+        elif x == "f4":
+            flip_four()
 
 def analytics(p):
     cards_remaining = 0
@@ -365,6 +657,24 @@ def analytics(p):
         bust_cards += deck[str(card)]
     percentage = round((bust_cards / cards_remaining) * 100, 2)
     return percentage
+
+def choose_player():
+    active_players = []
+    # Print list of active players
+    for idx, p in enumerate(players):
+        if p["status"] == ("active" or "stay"):
+            print(f"{idx + 1}. {p["name"]}")
+            active_players += str(idx + 1)
+    # Choose the player
+    target = input()
+    if target == "lb":
+        print_leaderboard(False)
+    if target in active_players:
+        return players[int(target) - 1]
+    else:
+        print("Try again. Not an active player: ")
+        choose_player()
+        return None
 
 def my_func(p):
     return p["score"]
