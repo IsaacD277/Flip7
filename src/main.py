@@ -1,3 +1,5 @@
+import requests
+
 CARDS = {
     "0": 1,
     "1": 1,
@@ -29,6 +31,7 @@ quitCount = 0
 analyticsVisible = False
 deck = {}
 
+
 def init():
     global analyticsVisible
     global players
@@ -52,7 +55,7 @@ def init():
             "tolerance": 100
         }
         players.append(player)
-    
+
     hints = input("Do you want to play with failure percentages visible? (y/n): ")
     if hints.lower() == "y":
         analyticsVisible = True
@@ -62,7 +65,8 @@ def init():
     print()
     print("For each turn, input the following and click enter:")
     print("  - For number cards, just type the number: 4")
-    print("  - For score modifier cards, type either a \"+\" or an \"x\" (without quotes) and then the number: +10 or x2")
+    print(
+        "  - For score modifier cards, type either a \"+\" or an \"x\" (without quotes) and then the number: +10 or x2")
     print("  - For action cards, type the following: ")
     print("    - Second Chance: sc")
     print("    - *Freeze: fr")
@@ -72,6 +76,7 @@ def init():
     print("*For Freeze and Flip Three, you must type the number of an active player to apply the action to")
     print()
     print()
+
 
 def main():
     global playing
@@ -99,7 +104,7 @@ def main():
                             score(player)
                             endRoundTurn(player)
                         break
-                    
+
                 if quitCount >= len(players):
                     round = False
                     break
@@ -116,7 +121,7 @@ def main():
     print("_____________________________________")
     print("Final Scores:")
     currentScores = players.copy()
-    currentScores.sort(reverse=True, key=myFunc) 
+    currentScores.sort(reverse=True, key=myFunc)
     for p in currentScores:
         print(f"{p["name"]}: {p["score"]}")
     winner = currentScores[0]
@@ -131,7 +136,7 @@ def main():
         playing = False
 
 
-def print_leaderboard(new = True):
+def print_leaderboard(new=True):
     if new:
         print("-----------NEW ROUND-----------")
     print("Current Scores:")
@@ -139,6 +144,7 @@ def print_leaderboard(new = True):
     currentScores.sort(reverse=True, key=myFunc)
     for p in currentScores:
         print(f"{p["name"]}: {p["score"]}")
+    return currentScores
 
 
 def reshuffle():
@@ -163,7 +169,8 @@ def reshuffle():
             if handMultiplier:
                 deck["x2"] -= 1
 
-def score(p):
+
+def score(p, update=True):
     playerNumbers = p.get("hand").get("numbers")
     score = sum(playerNumbers)
     if p.get("hand").get("multiplier"):
@@ -171,8 +178,10 @@ def score(p):
     playerAdditions = p.get("hand").get("addition")
     score += sum(playerAdditions)
     existingScore = p["score"]
-    p.__setitem__("score", score + existingScore)
-    print(f"{p["name"]} scored {score} this round. Total: {existingScore + score}")
+    if update:
+        p.__setitem__("score", score + existingScore)
+        print(f"{p["name"]} scored {score} this round. Total: {existingScore + score}")
+    return score
 
 def endRoundTurn(p):
     print(f"Ending round for {p["name"]}")
@@ -187,13 +196,15 @@ def endRoundTurn(p):
     global quitCount
     quitCount += 1
 
-def drawCard(p, flip = False):
+
+def drawCard(p, flip=False):
     if analyticsVisible:
         bustPercent = analytics(p)
         print("QUIT") if p["tolerance"] <= bustPercent else None
         userInput = input(f"{p["name"]}, flip a card ({bustPercent}% chance of bust) or \"b\" for bank: ")
     else:
         userInput = input(f"{p["name"]}, flip a card or \"b\" for bank: ")
+    addEntry(p, "f3" if flip else "turn" , userInput)
     if userInput.lower() == 'b':
         score(p)
         endRoundTurn(p)
@@ -231,7 +242,7 @@ def drawCard(p, flip = False):
             if flip:
                 return "f3"
             flipThree()
-            
+
     else:
         if card not in deck:
             print("Try again. Card is not valid.")
@@ -240,6 +251,8 @@ def drawCard(p, flip = False):
         else:
             print("Try again.")
         drawCard(p)
+
+
 def secondChance(player):
     if player["hand"]["sc"] == True:
         print("Already have one. Choose an active player to give it to: ")
@@ -248,8 +261,9 @@ def secondChance(player):
             if p["active"] == True and p["hand"]["sc"] == False:
                 print(f"{p["id"]}. {p["name"]}")
                 activePlayers.append(p["id"])
-        if activePlayers == []:
+        if len(activePlayers) < 1:
             print("No active players left without a second chance. Discard the second chance.")
+            return
         target = input()
         if target == "lb":
             print_leaderboard(False)
@@ -265,24 +279,26 @@ def secondChance(player):
             secondChance(player)
     player["hand"]["sc"] = True
 
+
 def freeze():
     print("Choose an active player to freeze:")
     activePlayers = []
     for idx, p in enumerate(players):
         if p["active"] == True:
             print(f"{idx + 1}. {p["name"]}")
-            activePlayers += str(idx + 1)
+            activePlayers.append(idx + 1)
     target = input()
     if target == "lb":
         print_leaderboard(False)
         freeze()
         return
-    if target in activePlayers:
+    if int(target) in activePlayers:
         score(players[int(target) - 1])
         endRoundTurn(players[int(target) - 1])
     else:
         print("Try again. Not an active player: ")
         freeze()
+
 
 def flipThree():
     print("Choose an active player to flip three:")
@@ -322,6 +338,7 @@ def flipThree():
         print("Try again. Not an active player: ")
         flipThree()
 
+
 def analytics(p):
     cardsRemaining = 0
     bustCards = 0
@@ -334,8 +351,36 @@ def analytics(p):
     percentage = round(((bustCards) / cardsRemaining) * 100, 2)
     return percentage
 
+
 def myFunc(p):
     return p["score"]
+
+
+def addEntry(player, reason, card, appliedTo=None):
+    leaderboard = players.copy()
+    leaderboard.sort(reverse=True, key=myFunc)
+    behindFirst = 0
+    counter = score(player, False)
+    if counter is None:
+        counter = 0
+    for idx, p in enumerate(leaderboard):
+        if player["name"] == p["name"]:
+            behindFirst = idx
+    url = 'http://localhost:3001'  # Example API endpoint
+    data = {
+        "player": player["name"],
+        "reason": reason,
+        "card": card,
+        "appliedTo": appliedTo,
+        "behindFirst": behindFirst,
+        "chanceOfBusting": analytics(player),
+        "hand": "hand",
+        "currentScore": counter,
+        "expectedValue": None,
+        "leaderboardScore": player["score"]
+    }
+    response = requests.post(f"{url}/turn", json=data)
+
 
 if __name__ == "__main__":
     playing = True
