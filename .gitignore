@@ -1,0 +1,5 @@
+.venv
+.vscode
+random.py
+tests/
+.DS_Store

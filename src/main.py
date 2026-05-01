@@ -1,4 +1,5 @@
 import requests
+import uuid
 
 CARDS = {
     "0": 1,
@@ -30,6 +31,7 @@ players = []
 quitCount = 0
 analyticsVisible = False
 deck = {}
+gameId = uuid.uuid4()
 
 
 def init():
@@ -76,7 +78,7 @@ def init():
     print("*For Freeze and Flip Three, you must type the number of an active player to apply the action to")
     print()
     print()
-
+    dataIndex = int(input("Index at start of game: "))
 
 def main():
     global playing
@@ -92,10 +94,12 @@ def main():
         while round:
             for idx, p in enumerate(players):
                 if p.get("active"):
-                    drawCard(p)
+                    turn = drawCard(p)
+                    dataIndex += 1
                     # CHECK FOR EMPTY DECK
                     reshuffle()
-                    nextPlayer = idx + 1
+                    if turn != "bank":
+                        nextPlayer = idx + 1
                     playerHand = p.get("hand").get("numbers")
                     if len(playerHand) >= 7:
                         p["hand"]["addition"].append(15)
@@ -135,7 +139,6 @@ def main():
     else:
         playing = False
 
-
 def print_leaderboard(new=True):
     if new:
         print("-----------NEW ROUND-----------")
@@ -145,7 +148,6 @@ def print_leaderboard(new=True):
     for p in currentScores:
         print(f"{p["name"]}: {p["score"]}")
     return currentScores
-
 
 def reshuffle():
     global deck
@@ -168,7 +170,6 @@ def reshuffle():
             handMultiplier = p["hand"]["multiplier"]
             if handMultiplier:
                 deck["x2"] -= 1
-
 
 def score(p, update=True):
     playerNumbers = p.get("hand").get("numbers")
@@ -196,19 +197,30 @@ def endRoundTurn(p):
     global quitCount
     quitCount += 1
 
-
 def drawCard(p, flip=False):
-    if analyticsVisible:
-        bustPercent = analytics(p)
+    bustPercent = analytics(p)
+    ev = expectedValue(p)
+    currentScore = score(p, False)
+    hand = []
+    for card in p["hand"]["numbers"]:
+        hand.append(str(card))
+    for card in p["hand"]["addition"]:
+        hand.append(f"+{card}")
+    if p["hand"]["sc"]:
+        hand.append("sc")
+    if p["hand"]["multiplier"]:
+        hand.append("x2")
+    
+    if analyticsVisible: # and p["name"] == "AI"
         print("QUIT") if p["tolerance"] <= bustPercent else None
-        userInput = input(f"{p["name"]}, flip a card ({bustPercent}% chance of bust) or \"b\" for bank: ")
+        userInput = input(f"{p["name"]} ({bustPercent}% bust, {round(ev, 2)} EV): ")
     else:
         userInput = input(f"{p["name"]}, flip a card or \"b\" for bank: ")
-    addEntry(p, "f3" if flip else "turn" , userInput)
     if userInput.lower() == 'b':
         score(p)
         endRoundTurn(p)
-        return
+        addEntry(p, "turn" , userInput, bustPercent, ev, currentScore, hand)
+        return "bank"
     if userInput.lower() == 'lb':
         print_leaderboard(False)
         drawCard(p, flip)
@@ -218,30 +230,39 @@ def drawCard(p, flip=False):
     additions = ["+2", "+4", "+6", "+8", "+10"]
     if card in deck and deck[card] > 0:
         deck[card] -= 1
+        id = addEntry(p, "f3" if flip else "turn" , userInput, bustPercent, ev, currentScore, hand)
         if card == "fr":
             if flip:
                 return "fr"
-            freeze()
+            player = freeze()
+            updateEntry(id, "", player["name"] if player is not None else None)
         elif card == "sc":
-            secondChance(p)
+            player = secondChance(p)
+            updateEntry(id, "", player["name"] if player is not None else None)
         elif card in numbers:
             if int(card) in p["hand"]["numbers"]:
                 if p["hand"]["sc"] == True:
                     p["hand"]["sc"] = False
+                    updateEntry(id, "saved")
                     print("Saved by the second chance card!")
                 else:
                     print("Card already in hand. 0 points")
+                    updateEntry(id, "bust")
                     endRoundTurn(p)
             else:
                 p["hand"]["numbers"].append(int(card))
+                updateEntry(id, "safe")
         elif card == "x2":
             p["hand"]["multiplier"] = True
+            updateEntry(id, "safe")
         elif card in additions:
             p["hand"]["addition"].append(int(card[1:]))
+            updateEntry(id, "safe")
         elif card == "f3":
             if flip:
                 return "f3"
-            flipThree()
+            player = flipThree()
+            updateEntry(id, "", player["name"] if player is not None else None)
 
     else:
         if card not in deck:
@@ -273,12 +294,11 @@ def secondChance(player):
             for p in players:
                 if p["id"] == int(target):
                     p["hand"]["sc"] = True
-                    return
+                    return players[int(target) - 1]
         else:
             print("Try again. Not an active player: ")
             secondChance(player)
     player["hand"]["sc"] = True
-
 
 def freeze():
     print("Choose an active player to freeze:")
@@ -295,10 +315,10 @@ def freeze():
     if int(target) in activePlayers:
         score(players[int(target) - 1])
         endRoundTurn(players[int(target) - 1])
+        return players[int(target) - 1]
     else:
         print("Try again. Not an active player: ")
         freeze()
-
 
 def flipThree():
     print("Choose an active player to flip three:")
@@ -330,14 +350,15 @@ def flipThree():
                         endRoundTurn(player)
                     break
         for x in remainingCards:
-            if x == "fr":
-                freeze()
-            elif x == "f3":
-                flipThree()
+            if targetPlayer["active"]:
+                if x == "fr":
+                    freeze()
+                elif x == "f3":
+                    flipThree()
+        return targetPlayer
     else:
         print("Try again. Not an active player: ")
         flipThree()
-
 
 def analytics(p):
     cardsRemaining = 0
@@ -351,39 +372,93 @@ def analytics(p):
     percentage = round(((bustCards) / cardsRemaining) * 100, 2)
     return percentage
 
+def expectedValue(player):
+    cardCount = 0
+    global deck
+    for card in deck:
+        cardCount += deck[card]
+    if cardCount <= 0:
+        return 0
+    expectedSum = 0
+    hand = []
+    handValue = 0
+    for card in player["hand"]["numbers"]:
+        hand.append(str(card))
+        handValue += int(card)
+    for card in player["hand"]["addition"]:
+        hand.append(f"+{card}")
+        handValue += card
+    if player["hand"]["multiplier"]:
+        handValue *= 2
+    for card in deck:
+        if deck[card] <= 0:
+            continue
+        if card in hand:
+            if player["hand"]["sc"]:
+                continue
+            else:
+                expectedSum -= handValue
+        elif card[0] == "+":
+            expectedSum += int(card[1:]) * deck[card]
+        elif card == "x2":
+            expectedSum += handValue
+        elif card in ["sc", "f3", "fr", "0"]:
+            continue
+        else: # number cards
+            if len(player["hand"]["numbers"]) >= 6:
+                if player["hand"]["multiplier"]:
+                    expectedSum += (15 + int(card) + int(card)) * deck[card]
+                else:
+                    expectedSum += (15 + int(card)) * deck[card]
+            else:
+                if player["hand"]["multiplier"]:
+                    expectedSum += (int(card) + int(card)) * deck[card]
+                else:
+                    expectedSum += int(card) * deck[card]
+    return expectedSum / cardCount
 
 def myFunc(p):
     return p["score"]
 
-
-def addEntry(player, reason, card, appliedTo=None):
+def addEntry(player, reason, card, bustPercent, ev, counter, hand):
+    global gameId
     leaderboard = players.copy()
     leaderboard.sort(reverse=True, key=myFunc)
     behindFirst = 0
-    counter = score(player, False)
     if counter is None:
         counter = 0
     for idx, p in enumerate(leaderboard):
         if player["name"] == p["name"]:
             behindFirst = idx
-    url = 'http://localhost:3001'  # Example API endpoint
+    url = 'http://localhost:3001'
     data = {
+        "gameId": str(gameId),
         "player": player["name"],
         "reason": reason,
         "card": card,
-        "appliedTo": appliedTo,
         "behindFirst": behindFirst,
-        "chanceOfBusting": analytics(player),
-        "hand": "hand",
+        "chanceOfBusting": bustPercent,
+        "hand": ", ".join(hand),
         "currentScore": counter,
-        "expectedValue": None,
+        "expectedValue": ev,
         "leaderboardScore": player["score"]
     }
     response = requests.post(f"{url}/turn", json=data)
+    object = response.json()
+    return object["data"]["id"]
 
+def updateEntry(id, result, appliedTo=None):
+    url = 'http://localhost:3001'
+    data = {
+        "result": result,
+        "appliedTo": appliedTo
+    }
+    requests.patch(f"{url}/turn/{id}", json=data)
 
 if __name__ == "__main__":
-    playing = True
-    while playing:
-        init()
-        main()
+
+    # Starts the Node server without blocking the rest of the script
+    # process = subprocess.Popen(["node", "src/backend/app.js"])
+    # print("The Node.js server is starting...")
+    init()
+    main()
