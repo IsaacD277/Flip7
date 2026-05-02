@@ -1,6 +1,9 @@
-import requests
 import uuid
+import sqlite3
+import pathlib
 
+ROOT_DIR = pathlib.Path(__file__).parent.parent
+DB_PATH = ROOT_DIR / "flip7.db"
 CARDS = {
     "0": 1,
     "1": 1,
@@ -27,17 +30,16 @@ CARDS = {
 }
 
 players = []
-
 quitCount = 0
 analyticsVisible = False
 deck = {}
 gameId = uuid.uuid4()
 
-
 def init():
     global analyticsVisible
     global players
     global deck
+    createTable()
     players = []
     deck = CARDS.copy()
     numberOfPlayers = input("Enter the number of players: ")
@@ -78,7 +80,6 @@ def init():
     print("*For Freeze and Flip Three, you must type the number of an active player to apply the action to")
     print()
     print()
-    dataIndex = int(input("Index at start of game: "))
 
 def main():
     global playing
@@ -95,7 +96,6 @@ def main():
             for idx, p in enumerate(players):
                 if p.get("active"):
                     turn = drawCard(p)
-                    dataIndex += 1
                     # CHECK FOR EMPTY DECK
                     reshuffle()
                     if turn != "bank":
@@ -419,6 +419,12 @@ def expectedValue(player):
 
 def myFunc(p):
     return p["score"]
+    url = 'http://localhost:3001'
+    data = {
+        "result": result,
+        "appliedTo": appliedTo
+    }
+    requests.patch(f"{url}/turn/{id}", json=data)
 
 def addEntry(player, reason, card, bustPercent, ev, counter, hand):
     global gameId
@@ -430,35 +436,56 @@ def addEntry(player, reason, card, bustPercent, ev, counter, hand):
     for idx, p in enumerate(leaderboard):
         if player["name"] == p["name"]:
             behindFirst = idx
-    url = 'http://localhost:3001'
-    data = {
-        "gameId": str(gameId),
-        "player": player["name"],
-        "reason": reason,
-        "card": card,
-        "behindFirst": behindFirst,
-        "chanceOfBusting": bustPercent,
-        "hand": ", ".join(hand),
-        "currentScore": counter,
-        "expectedValue": ev,
-        "leaderboardScore": player["score"]
-    }
-    response = requests.post(f"{url}/turn", json=data)
-    object = response.json()
-    return object["data"]["id"]
+
+    data = (str(gameId), player["name"], reason, card, behindFirst, bustPercent, ", ".join(hand), counter, ev, player["score"])
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cur = conn.cursor()
+            cur.execute('''
+                INSERT INTO turns 
+                (gameId, player, reason, card, behindFirst, chanceOfBusting, hand, currentScore, expectedValue, leaderboardScore) 
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', data)
+            id = cur.lastrowid 
+            conn.commit()
+    except sqlite3.Error as e:
+        print(e)
+    return id
 
 def updateEntry(id, result, appliedTo=None):
-    url = 'http://localhost:3001'
-    data = {
-        "result": result,
-        "appliedTo": appliedTo
-    }
-    requests.patch(f"{url}/turn/{id}", json=data)
+    data = (result, appliedTo, id)
+    sql = 'UPDATE turns SET result=?, appliedTo=? WHERE id=?'
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cur = conn.cursor()
+            cur.execute(sql, data)
+            conn.commit()
+    except sqlite3.OperationalError as e:
+        print(e)
+
+def createTable():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS turns (
+            id INTEGER PRIMARY KEY,
+            gameId STRING,
+            player STRING,
+            reason STRING,
+            card STRING,
+            appliedTo STRING,
+            behindFirst INTEGER,
+            chanceOfBusting FLOAT,
+            hand STRING,
+            currentScore INTEGER,
+            expectedValue FLOAT,
+            leaderboardScore INTEGER,
+            result STRING
+        )
+    """)
+    conn.commit()
+    conn.close()
 
 if __name__ == "__main__":
-
-    # Starts the Node server without blocking the rest of the script
-    # process = subprocess.Popen(["node", "src/backend/app.js"])
-    # print("The Node.js server is starting...")
     init()
     main()

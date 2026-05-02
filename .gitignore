@@ -1,5 +1,7 @@
 .venv
 .vscode
+.idea
 random.py
 tests/
 .DS_Store
+flip7.db
