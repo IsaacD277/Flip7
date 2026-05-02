@@ -29,3 +29,9 @@ Pay attention to the player name at the beginning of each turn to ensure each pl
 The game will let you know to shuffle the deck when there are no cards left (if you run out of cards and the game doesn't tell you to reshuffle...you are probably missing a card, look around for any cards not included in the deck).
 
 If you know you are missing a card from your physical deck, you will need to edit the CARDS variable within the Python file to match what you actually have.
+
+## Updates
+### 5/2026
+Turns are now stored in the file flip7.db which is automatically generated if you don't have one already.
+
+Start collecting data on your friends, we will eventually have "AI" agents that can play just like your friends would. (As well as "AI" agents that you just can't beat)
