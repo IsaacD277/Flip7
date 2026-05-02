@@ -419,12 +419,6 @@ def expectedValue(player):
 
 def myFunc(p):
     return p["score"]
-    url = 'http://localhost:3001'
-    data = {
-        "result": result,
-        "appliedTo": appliedTo
-    }
-    requests.patch(f"{url}/turn/{id}", json=data)
 
 def addEntry(player, reason, card, bustPercent, ev, counter, hand):
     global gameId
