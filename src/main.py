@@ -1,39 +1,87 @@
+# Start Game
+# Initialize
+#     - Player Names
+#     - Starting Player
+#     - Analytics?
+# Main
+#     - All Rounds
+#         - All Turns
+#             - Update Database
+#         - Show Leaderboard
+#     - End Game
+
 import uuid
 import sqlite3
 import pathlib
 
 ROOT_DIR = pathlib.Path(__file__).parent.parent
 DB_PATH = ROOT_DIR / "flip7.db"
-CARDS = {
-    "0": 1,
-    "1": 1,
-    "2": 2,
-    "3": 3,
-    "4": 4,
-    "5": 5,
-    "6": 6,
-    "7": 7,
-    "8": 8,
-    "9": 9,
-    "10": 10,
-    "11": 11,
-    "12": 12,
-    "sc": 3,
-    "fr": 3,
-    "f3": 3,
-    "+2": 1,
-    "+4": 1,
-    "+6": 1,
-    "+8": 1,
-    "+10": 1,
-    "x2": 1
-}
 
-players = []
+class GameState:
+    def __init__(self, cards, deck, players, gameId):
+        self.cards = {
+            "0": 1,
+            "1": 1,
+            "2": 2,
+            "3": 3,
+            "4": 4,
+            "5": 5,
+            "6": 6,
+            "7": 7,
+            "8": 8,
+            "9": 9,
+            "10": 10,
+            "11": 11,
+            "12": 12,
+            "sc": 3,
+            "fr": 3,
+            "f3": 3,
+            "+2": 1,
+            "+4": 1,
+            "+6": 1,
+            "+8": 1,
+            "+10": 1,
+            "x2": 1
+        }
+        self.deck = cards.copy
+        self.players = []
+        self.gameId = uuid.uuid4()
+
+    def add_player(self, name, tolerance = 100):
+        player = {
+            "id": len(self.players) + 1,
+            "active": True,
+            "hand": {
+                "numbers": [],
+                "addition": [],
+                "multiplier": False,
+                "sc": False
+            },
+            "name": name,
+            "score": 0,
+            "tolerance": tolerance
+        }
+        self.players.append(player)
+        
+    def is_valid_card(self, card):
+        if card.lower() == "b":
+            return True
+        elif card.lower() in self.deck and self.deck[card] > 0:
+            return True
+        else:
+            return False
+    
+    def active_players(self):
+        active = []
+        for player in self.players:
+            if player.active:
+                active.append(player)
+        return active
+    
+
+
 quitCount = 0
 analyticsVisible = False
-deck = {}
-gameId = uuid.uuid4()
 
 def init():
     global analyticsVisible
@@ -41,7 +89,6 @@ def init():
     global deck
     createTable()
     players = []
-    deck = CARDS.copy()
     numberOfPlayers = input("Enter the number of players: ")
     for i in range(int(numberOfPlayers)):
         playerName = input(f"Player {i + 1} name: ")
