@@ -13,9 +13,17 @@
 import uuid
 import sqlite3
 import pathlib
+from dataclasses import dataclass, field
 
 ROOT_DIR = pathlib.Path(__file__).parent.parent
 DB_PATH = ROOT_DIR / "flip7.db"
+
+@dataclass
+class Hand:
+    numbers: list[int] = field(default_factory = list)
+    addition: list[int] = field(default_factory = list)
+    sc: bool = field(default = False)
+    multiplier: bool = field(default = False)
 
 class Player:
     def __init__(self, player_id, name, tolerance = 100):
@@ -23,36 +31,102 @@ class Player:
         self.name = name
         self.active = True
         self.tolerance = tolerance
-        self.hand = {
-            "numbers": [],
-            "addition": [],
-            "multiplier": False,
-            "sc": False
-        }
         self.score = []
+        self.hand = Hand()
+
+    def hand_list(self):
+        hand_list = []
+        for card in self.hand.numbers:
+            hand_list.append(str(card))
+        for card in self.hand.addition:
+            hand_list.append(f"+{card}")
+        if self.hand.sc:
+            hand_list.append("sc")
+        if self.hand.multiplier:
+            hand_list.append("x2")
+        return hand_list
 
     def reset_hand(self):
-        self.hand = {
-            "numbers": [],
-            "addition": [],
-            "multiplier": False,
-            "sc": False
-        }
-    def show_player(self):
-        print(self.name)
-        # print(self.hand)
-        # print(sum(self.score))
-        # print(self.active)
+        self.hand = Hand()
 
     def hand_score(self):
-        current_score = sum(self.hand["numbers"])
-        if self.hand["multiplier"]:
+        current_score = sum(self.hand.numbers)
+        if self.hand.multiplier:
             current_score += current_score
-        current_score += sum(self.hand["addition"])
+        current_score += sum(self.hand.addition)
         return current_score
 
+    def bank(self):
+        self.score.append(self.hand_score())
+        self.reset_hand()
+        self.active = False
+
+    def bust(self):
+        self.reset_hand()
+        self.active = False
+
+    def check_seven(self):
+        if len(self.hand.numbers) >= 7:
+            self.hand.addition.append(15)
+            return True
+        return False
+
+    def bust_chance(self, deck):
+        if self.hand.sc:
+            return 0.0
+        cards_remaining = 0
+        bust_cards = 0
+        for card in deck:
+            cards_remaining += deck[card]
+        for card in self.hand_list():
+            bust_cards += deck[str(card)]
+        return round((bust_cards / cards_remaining) * 100, 2)
+
+    def expected_value(self, deck):
+        card_count = 0
+        expected_sum = 0
+        hand = []
+        hand_value = 0
+        for card in self.hand.numbers:
+            hand.append(str(card))
+            hand_value += int(card)
+        for card in self.hand.addition:
+            hand.append(f"+{card}")
+            hand_value += card
+        if self.hand.multiplier:
+            hand_value *= 2
+        for card in deck:
+            card_count += deck[card]
+            if deck[card] <= 0:
+                continue
+            if card in hand:
+                if self.hand.sc:
+                    continue
+                else:
+                    expected_sum -= hand_value
+            elif card[0] == "+":
+                expected_sum += int(card[1:]) * deck[card]
+            elif card == "x2":
+                expected_sum += hand_value
+            elif card in ["sc", "f3", "fr", "0"]:
+                continue
+            else:  # number cards
+                if len(self.hand.numbers) >= 6:
+                    if self.hand.multiplier:
+                        expected_sum += (15 + int(card) + int(card)) * deck[card]
+                    else:
+                        expected_sum += (15 + int(card)) * deck[card]
+                else:
+                    if self.hand.multiplier:
+                        expected_sum += (int(card) + int(card)) * deck[card]
+                    else:
+                        expected_sum += int(card) * deck[card]
+        if card_count <= 0:
+            return 0
+        return round(expected_sum / card_count, 2)
+
 class GameState:
-    def __init__(self, deck=None, analytics = True, round = 1):
+    def __init__(self, analytics = True, round = 1):
         self.cards = {
             "0": 1,
             "1": 1,
@@ -77,38 +151,45 @@ class GameState:
             "+10": 1,
             "x2": 1
         }
-        if deck is None:
-            self.deck = self.cards.copy
-        else:
-            self.deck = deck
+        self.deck = self.cards.copy()
         self.players = []
         self.analytics = analytics
         self.gameId = uuid.uuid4()
         self.round = round
-        self.quit_count = 0
 
     def add_player(self, name, tolerance = 100):
         player = Player(len(self.players) + 1, name, tolerance)
         self.players.append(player)
-    
-    def show_players(self):
-        for player in self.players:
-            player.show_player()
-
-    def show_scores(self):
-        for player in self.players:
-            print(player.hand_score())
 
     def set_analytics(self, choice: bool):
         self.analytics = choice
 
-    def show_analytics(self):
-        return self.analytics
-        
+    def current_player(self):
+        if not self.players:
+            return None
+        return self.players[0]
+
+    def next_player(self):
+        if self.players:
+            player = self.players.pop(0)
+            self.players.append(player)
+
+    def leaderboard(self):
+        current_scores = self.players.copy()
+        current_scores.sort(reverse=True, key=lambda x: x.score)
+        return current_scores
+
+    def show_scores(self, new_round = True):
+        if new_round:
+            print("-----------NEW ROUND-----------")
+        print("Current Scores:")
+        current_scores = self.leaderboard()
+        for player in current_scores:
+            print(f"{player.name}: {sum(player.score[:self.round - 1])}")
+            print(player.score)
+
     def is_valid_card(self, card):
-        if card.lower() == "b":
-            return False
-        elif card.lower() in self.deck and self.deck[card] > 0:
+        if card.lower() in self.deck and self.deck[card.lower()] > 0:
             return True
         else:
             return False
@@ -120,404 +201,244 @@ class GameState:
                 active.append(player)
         return active
 
-    def reset_hand(self, player_index):
-        for p in self.players:
-            if p.id == player_index:
-                p.reset_hand()
-                break
-        self.quit_count += 1
+    def check_deck(self):
+        cards_remaining = 0
+        for card in self.deck:
+            cards_remaining += self.deck[card]
+        if cards_remaining == 0:
+            print("Reshuffle all cards not in hand")
+            deck = self.cards.copy()
+            for p in self.players:
+                hand_numbers = p.hand.numbers
+                for number in hand_numbers:
+                    self.deck[str(number)] -= 1
+                hand_sc = p.hand.sc
+                if hand_sc:
+                    self.deck["sc"] -= 1
+                hand_additions = p.hand.addition
+                for number in hand_additions:
+                    self.deck[f"+{str(number)}"] -= 1
+                hand_multiplier = p.hand.multiplier
+                if hand_multiplier:
+                    self.deck["x2"] -= 1
 
-
-def main():
-    global playing
-    global analyticsVisible
-    global quitCount
-    game = True
-    nextPlayer = 0
-
-    while game:
-        round = True
-        print_leaderboard()
-
-        while round:
-            for idx, p in enumerate(players):
-                if p.get("active"):
-                    turn = drawCard(p)
-                    # CHECK FOR EMPTY DECK
-                    reshuffle()
-                    if turn != "bank":
-                        nextPlayer = idx + 1
-                    playerHand = p.get("hand").get("numbers")
-                    if len(playerHand) >= 7:
-                        p["hand"]["addition"].append(15)
-                        round = False
-                        for player in players:
-                            score(player)
-                            endRoundTurn(player)
+    def choose_player(self, second_chance = False):
+        if self.active_players():
+            for index, p in enumerate(self.active_players()):
+                if second_chance:
+                    if p.hand.sc:
+                        continue
+                print(f"{index}. {p.name}")
+            while True:
+                target = input("Enter the number of your choice: ")
+                if target == "lb":
+                    self.show_scores(False)
+                try:
+                    selection_index = int(target) - 1
+                    if 0 <= selection_index < len(self.active_players()):
+                        selected_player = self.active_players()[selection_index]
                         break
+                    else:
+                        print("Invalid selection. Try again.")
+                except ValueError:
+                    print("Invalid selection. Try again.")
+            return selected_player
+        return None
 
-                if quitCount >= len(players):
-                    round = False
-                    break
-        for i in range(nextPlayer):
-            player = players.pop(0)
-            players.append(player)
-
-        quitCount = 0
-        for p in players:
-            p["active"] = True
-            if p["score"] >= 200:
-                game = False
-                break
-    print("_____________________________________")
-    print("Final Scores:")
-    currentScores = players.copy()
-    currentScores.sort(reverse=True, key=myFunc)
-    for p in currentScores:
-        print(f"{p["name"]}: {p["score"]}")
-    winner = currentScores[0]
-    print()
-    print(f"Winner: {winner["name"]}")
-    print("_____________________________________")
-    print()
-    again = input("Play again? (y/n): ")
-    if again.lower() == "y":
-        game = True
-    else:
-        playing = False
-
-def print_leaderboard(new=True):
-    if new:
-        print("-----------NEW ROUND-----------")
-    print("Current Scores:")
-    currentScores = players.copy()
-    currentScores.sort(reverse=True, key=myFunc)
-    for p in currentScores:
-        print(f"{p["name"]}: {p["score"]}")
-    return currentScores
-
-def reshuffle():
-    cardsRemaining = 0
-    for card in deck:
-        cardsRemaining += deck[card]
-    if cardsRemaining == 0:
-        print("Reshuffle all cards not in hand")
-        deck = CARDS.copy()
-        for p in players:
-            handNumbers = p["hand"]["numbers"]
-            for number in handNumbers:
-                deck[str(number)] -= 1
-            handSC = p["hand"]["sc"]
-            if handSC:
-                deck["sc"] -= 1
-            handAdditions = p["hand"]["addition"]
-            for number in handAdditions:
-                deck[f"+{str(number)}"] -= 1
-            handMultiplier = p["hand"]["multiplier"]
-            if handMultiplier:
-                deck["x2"] -= 1
-
-def score(p, update=True):
-    playerNumbers = p.get("hand").get("numbers")
-    score = sum(playerNumbers)
-    if p.get("hand").get("multiplier"):
-        score += score
-    playerAdditions = p.get("hand").get("addition")
-    score += sum(playerAdditions)
-    existingScore = p["score"]
-    if update:
-        p.__setitem__("score", score + existingScore)
-        print(f"{p["name"]} scored {score} this round. Total: {existingScore + score}")
-    return score
-
-def drawCard(p, flip=False):
-    bustPercent = analytics(p)
-    ev = expectedValue(p)
-    currentScore = score(p, False)
-    hand = []
-    for card in p["hand"]["numbers"]:
-        hand.append(str(card))
-    for card in p["hand"]["addition"]:
-        hand.append(f"+{card}")
-    if p["hand"]["sc"]:
-        hand.append("sc")
-    if p["hand"]["multiplier"]:
-        hand.append("x2")
-    
-    if analyticsVisible: # and p["name"] == "AI"
-        print("QUIT") if p["tolerance"] <= bustPercent else None
-        userInput = input(f"{p["name"]} ({bustPercent}% bust, {round(ev, 2)} EV): ")
-    else:
-        userInput = input(f"{p["name"]}, flip a card or \"b\" for bank: ")
-    if userInput.lower() == 'b':
-        score(p)
-        endRoundTurn(p)
-        addEntry(p, "turn" , userInput, bustPercent, ev, currentScore, hand)
-        return "bank"
-    if userInput.lower() == 'lb':
-        print_leaderboard(False)
-        drawCard(p, flip)
-        return
-    card = userInput.lower()
-    numbers = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]
-    additions = ["+2", "+4", "+6", "+8", "+10"]
-    if card in deck and deck[card] > 0:
-        deck[card] -= 1
-        id = addEntry(p, "f3" if flip else "turn" , userInput, bustPercent, ev, currentScore, hand)
-        if card == "fr":
-            if flip:
-                return "fr"
-            player = freeze()
-            updateEntry(id, "", player["name"] if player is not None else None)
-        elif card == "sc":
-            player = secondChance(p)
-            updateEntry(id, "", player["name"] if player is not None else None)
-        elif card in numbers:
-            if int(card) in p["hand"]["numbers"]:
-                if p["hand"]["sc"] == True:
-                    p["hand"]["sc"] = False
-                    updateEntry(id, "saved")
-                    print("Saved by the second chance card!")
+    def draw_card(self, user_input, player):
+        card = user_input.lower()
+        numbers = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]
+        additions = ["+2", "+4", "+6", "+8", "+10"]
+        if card in self.deck and self.deck[card] > 0:
+            self.deck[card] -= 1
+            if card == "fr":
+                return self.freeze()
+            elif card == "sc":
+                return self.second_chance(player)
+            elif card == "f3":
+                return self.flip_three()
+            elif card == "x2":
+                player.hand.multiplier = True
+            elif card in additions:
+                player.hand.addition.append(int(card[1:]))
+            elif card in numbers:
+                if card in player.hand_list():
+                    if player.hand.sc:
+                        player.hand.sc = False
+                        print("Saved by the second chance card!")
+                    else:
+                        player.bust()
+                        print("Card already in hand. 0 points.")
                 else:
-                    print("Card already in hand. 0 points")
-                    updateEntry(id, "bust")
-                    endRoundTurn(p)
+                    player.hand.numbers.append(int(card))
+        return None
+
+    def second_chance(self, player):
+        if player.hand.sc:
+            if self.active_players():
+                print("Already have one. Choose an active player to give it to: ")
+                selected_player = self.choose_player(True)
+                if not selected_player:
+                    return None
             else:
-                p["hand"]["numbers"].append(int(card))
-                updateEntry(id, "safe")
-        elif card == "x2":
-            p["hand"]["multiplier"] = True
-            updateEntry(id, "safe")
-        elif card in additions:
-            p["hand"]["addition"].append(int(card[1:]))
-            updateEntry(id, "safe")
-        elif card == "f3":
-            if flip:
-                return "f3"
-            player = flipThree()
-            updateEntry(id, "", player["name"] if player is not None else None)
-
-    else:
-        if card not in deck:
-            print("Try again. Card is not valid.")
-        elif deck[card] <= 0:
-            print(f"Try again. No more {card}'s in deck.")
+                print("No active players left without a second chance. Discard the second chance.")
+                return None
+            selected_player.hand.sc = True
+            return selected_player
         else:
-            print("Try again.")
-        drawCard(p)
+            player.hand.sc = True
+            return player
 
-def secondChance(player):
-    if player["hand"]["sc"] == True:
-        print("Already have one. Choose an active player to give it to: ")
-        activePlayers = []
-        for p in players:
-            if p["active"] == True and p["hand"]["sc"] == False:
-                print(f"{p["id"]}. {p["name"]}")
-                activePlayers.append(p["id"])
-        if len(activePlayers) < 1:
-            print("No active players left without a second chance. Discard the second chance.")
-            return
-        target = input()
-        if target == "lb":
-            print_leaderboard(False)
-            secondChance(player)
-            return
-        if int(target) in activePlayers:
-            for p in players:
-                if p["id"] == int(target):
-                    p["hand"]["sc"] = True
-                    return players[int(target) - 1]
-        else:
-            print("Try again. Not an active player: ")
-            secondChance(player)
-    player["hand"]["sc"] = True
-
-def freeze():
-    print("Choose an active player to freeze:")
-    activePlayers = []
-    for idx, p in enumerate(players):
-        if p["active"] == True:
-            print(f"{idx + 1}. {p["name"]}")
-            activePlayers.append(idx + 1)
-    target = input()
-    if target == "lb":
-        print_leaderboard(False)
-        freeze()
-        return
-    if int(target) in activePlayers:
-        score(players[int(target) - 1])
-        endRoundTurn(players[int(target) - 1])
-        return players[int(target) - 1]
-    else:
-        print("Try again. Not an active player: ")
-        freeze()
-
-def flipThree():
-    print("Choose an active player to flip three:")
-    activePlayers = []
-    for idx, p in enumerate(players):
-        if p["active"] == True:
-            print(f"{idx + 1}. {p["name"]}")
-            activePlayers += str(idx + 1)
-
-    target = input()
-    if target == "lb":
-        print_leaderboard(False)
-        flipThree()
-        return
-    if target in activePlayers:
-        targetPlayer = players[int(target) - 1]
-        remainingCards = []
+    def flip_three(self):
+        print("Choose an active player to flip three:")
+        selected_player = self.choose_player(False)
+        flipped_cards = []
         for i in range(3):
-            if targetPlayer["active"]:
-                print(f"{targetPlayer["name"]}'s Card: ")
-                flippedCard = drawCard(targetPlayer, True)
-                remainingCards.append(flippedCard)
-                reshuffle()
-                if len(targetPlayer["hand"]["numbers"]) >= 7:
-                    targetPlayer["hand"]["addition"].append(15)
-                    round = False
-                    for player in players:
-                        score(player)
-                        endRoundTurn(player)
+            if selected_player.active:
+                user_input = input(f"{selected_player.name}'s Card: ")
+                flipped_card = self.draw_card(user_input, selected_player)
+                flipped_cards.append(flipped_card)
+                self.check_deck()
+                if selected_player.check_seven():
                     break
-        for x in remainingCards:
-            if targetPlayer["active"]:
+        for x in flipped_cards:
+            if selected_player.active:
                 if x == "fr":
-                    freeze()
+                    self.freeze()
                 elif x == "f3":
-                    flipThree()
-        return targetPlayer
-    else:
-        print("Try again. Not an active player: ")
-        flipThree()
+                    self.flip_three()
+        return selected_player
 
-def do_analytics(p):
-    cardsRemaining = 0
-    bustCards = 0
-    if p["hand"]["sc"] == True:
-        return 0.0
-    for card in deck:
-        cardsRemaining += deck[card]
-    for card in p["hand"]["numbers"]:
-        bustCards += deck[str(card)]
-    percentage = round(((bustCards) / cardsRemaining) * 100, 2)
-    return percentage
+    def freeze(self):
+        print("Choose an active player to freeze:")
+        selected_player = self.choose_player(False)
+        selected_player.bank()
+        return selected_player
 
-def expectedValue(player):
-    cardCount = 0
-    for card in deck:
-        cardCount += deck[card]
-    if cardCount <= 0:
-        return 0
-    expectedSum = 0
-    hand = []
-    handValue = 0
-    for card in player["hand"]["numbers"]:
-        hand.append(str(card))
-        handValue += int(card)
-    for card in player["hand"]["addition"]:
-        hand.append(f"+{card}")
-        handValue += card
-    if player["hand"]["multiplier"]:
-        handValue *= 2
-    for card in deck:
-        if deck[card] <= 0:
-            continue
-        if card in hand:
-            if player["hand"]["sc"]:
-                continue
-            else:
-                expectedSum -= handValue
-        elif card[0] == "+":
-            expectedSum += int(card[1:]) * deck[card]
-        elif card == "x2":
-            expectedSum += handValue
-        elif card in ["sc", "f3", "fr", "0"]:
-            continue
-        else: # number cards
-            if len(player["hand"]["numbers"]) >= 6:
-                if player["hand"]["multiplier"]:
-                    expectedSum += (15 + int(card) + int(card)) * deck[card]
-                else:
-                    expectedSum += (15 + int(card)) * deck[card]
-            else:
-                if player["hand"]["multiplier"]:
-                    expectedSum += (int(card) + int(card)) * deck[card]
-                else:
-                    expectedSum += int(card) * deck[card]
-    return expectedSum / cardCount
+    def new_round(self):
+        end_game = False
+        for player in self.players:
+            if int(sum(player.score)) >= 200:
+                end_game = True
+            player.reset_hand()
+            player.active = True
+        if not end_game:
+            self.round += 1
+            self.show_scores()
+            return False
+        return self.end_game()
 
-def myFunc(p):
-    return p["score"]
+    def end_game(self):
+        print("_____________________________________")
+        print("Final Scores:")
+        current_scores = self.leaderboard()
+        for player in current_scores:
+            print(f"{player.name}: {player.score}")
+        if len(current_scores) > 1:
+            if current_scores[0] == current_scores[1]:
+                print()
+                print(f"Tie between {current_scores[0].name} and {current_scores[1].name}")
+                print("_____________________________________")
+                print()
+        else:
+            winner = current_scores[0]
+            print()
+            print(f"Winner: {winner["name"]}")
+            print("_____________________________________")
+            print()
+        return True
 
-def addEntry(player, reason, card, bustPercent, ev, counter, hand):
-    global gameId
-    leaderboard = players.copy()
-    leaderboard.sort(reverse=True, key=myFunc)
-    behindFirst = 0
-    if counter is None:
-        counter = 0
-    for idx, p in enumerate(leaderboard):
-        if player["name"] == p["name"]:
-            behindFirst = idx
+def game_round(game):
+        while True: # Round Loop
+            player = game.current_player()
+            if player.active:
+                game.check_deck()  # check for an empty deck, if so, reshuffle
+                while True: # loop until valid input
+                    if game.analytics:
+                        user_input = input(f"{player.name} ({player.bust_chance(game.deck)}% bust, {player.expected_value(game.deck)} EV): ")
+                    else:
+                        user_input = input(f"{player.name}, flip a card or \"b\" for bank: ")
+                    if user_input.lower() == "b":
+                        player.bank()
+                        break
+                    elif user_input.lower() == "lb":
+                        game.show_scores()
+                    else:
+                        if game.is_valid_card(user_input):
+                            break
+                        else:
+                            print("Invalid input. Try again.")
+                game.draw_card(user_input, player)
+                game.next_player()
+                if player.check_seven():
+                    for player in game.active_players():
+                        player.bank()
+                if not game.active_players():
+                    break
+        return game.new_round()
 
-    data = (str(gameId), player["name"], reason, card, behindFirst, bustPercent, ", ".join(hand), counter, ev, player["score"])
-    try:
-        with sqlite3.connect(DB_PATH) as conn:
-            cur = conn.cursor()
-            cur.execute('''
-                INSERT INTO turns 
-                (gameId, player, reason, card, behindFirst, chanceOfBusting, hand, currentScore, expectedValue, leaderboardScore) 
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', data)
-            id = cur.lastrowid 
-            conn.commit()
-    except sqlite3.Error as e:
-        print(e)
-    return id
+# def addEntry(player, reason, card, bustPercent, ev, counter, hand):
+#     global gameId
+#     leaderboard = players.copy()
+#     leaderboard.sort(reverse=True, key=myFunc)
+#     behindFirst = 0
+#     if counter is None:
+#         counter = 0
+#     for idx, p in enumerate(leaderboard):
+#         if player["name"] == p["name"]:
+#             behindFirst = idx
+#
+#     data = (str(gameId), player["name"], reason, card, behindFirst, bustPercent, ", ".join(hand), counter, ev, player["score"])
+#     try:
+#         with sqlite3.connect(DB_PATH) as conn:
+#             cur = conn.cursor()
+#             cur.execute('''
+#                 INSERT INTO turns
+#                 (gameId, player, reason, card, behindFirst, chanceOfBusting, hand, currentScore, expectedValue, leaderboardScore)
+#                 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+#             ''', data)
+#             id = cur.lastrowid
+#             conn.commit()
+#     except sqlite3.Error as e:
+#         print(e)
+#     return id
+#
+# def updateEntry(id, result, appliedTo=None):
+#     data = (result, appliedTo, id)
+#     sql = 'UPDATE turns SET result=?, appliedTo=? WHERE id=?'
+#     try:
+#         with sqlite3.connect(DB_PATH) as conn:
+#             cur = conn.cursor()
+#             cur.execute(sql, data)
+#             conn.commit()
+#     except sqlite3.OperationalError as e:
+#         print(e)
+#
+# def create_table():
+#     conn = sqlite3.connect(DB_PATH)
+#     cur = conn.cursor()
+#     cur.execute("""
+#         CREATE TABLE IF NOT EXISTS turns (
+#             id INTEGER PRIMARY KEY,
+#             gameId STRING,
+#             player STRING,
+#             reason STRING,
+#             card STRING,
+#             appliedTo STRING,
+#             behindFirst INTEGER,
+#             chanceOfBusting FLOAT,
+#             hand STRING,
+#             currentScore INTEGER,
+#             expectedValue FLOAT,
+#             leaderboardScore INTEGER,
+#             result STRING
+#         )
+#     """)
+#     conn.commit()
+#     conn.close()
 
-def updateEntry(id, result, appliedTo=None):
-    data = (result, appliedTo, id)
-    sql = 'UPDATE turns SET result=?, appliedTo=? WHERE id=?'
-    try:
-        with sqlite3.connect(DB_PATH) as conn:
-            cur = conn.cursor()
-            cur.execute(sql, data)
-            conn.commit()
-    except sqlite3.OperationalError as e:
-        print(e)
-
-def create_table():
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS turns (
-            id INTEGER PRIMARY KEY,
-            gameId STRING,
-            player STRING,
-            reason STRING,
-            card STRING,
-            appliedTo STRING,
-            behindFirst INTEGER,
-            chanceOfBusting FLOAT,
-            hand STRING,
-            currentScore INTEGER,
-            expectedValue FLOAT,
-            leaderboardScore INTEGER,
-            result STRING
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-
-
-
-
-
-def init(state):
-    create_table()
+def init(game):
+    # create_table()
     while True:
         count_input = input("Enter the number of players: ")
         try:
@@ -530,16 +451,16 @@ def init(state):
             print("Please enter a positive integer")
     for i in range(int(player_count)):
         name_input = input(f"Player {i + 1} name: ")
-        state.add_player(name_input)
+        game.add_player(name_input)
     hints = input("Do you want to play with failure percentages visible? (y/n): ")
     if hints.lower() == "y":
-        state.set_analytics(True)
+        game.set_analytics(True)
     else:
-        state.set_analytics(False)
+        game.set_analytics(False)
+
 
 if __name__ == "__main__":
-    game = GameState()
-    init(game)
-    var = input("Player to remove:")
-    game.reset_hand(var)
-    game.show_scores()
+    state = GameState()
+    init(state)
+    while True:
+        game_round(state)
