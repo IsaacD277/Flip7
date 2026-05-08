@@ -17,8 +17,42 @@ import pathlib
 ROOT_DIR = pathlib.Path(__file__).parent.parent
 DB_PATH = ROOT_DIR / "flip7.db"
 
+class Player:
+    def __init__(self, player_id, name, tolerance = 100):
+        self.id = player_id
+        self.name = name
+        self.active = True
+        self.tolerance = tolerance
+        self.hand = {
+            "numbers": [],
+            "addition": [],
+            "multiplier": False,
+            "sc": False
+        }
+        self.score = []
+
+    def reset_hand(self):
+        self.hand = {
+            "numbers": [],
+            "addition": [],
+            "multiplier": False,
+            "sc": False
+        }
+    def show_player(self):
+        print(self.name)
+        # print(self.hand)
+        # print(sum(self.score))
+        # print(self.active)
+
+    def hand_score(self):
+        current_score = sum(self.hand["numbers"])
+        if self.hand["multiplier"]:
+            current_score += current_score
+        current_score += sum(self.hand["addition"])
+        return current_score
+
 class GameState:
-    def __init__(self, cards, deck, players, gameId):
+    def __init__(self, deck=None, analytics = True, round = 1):
         self.cards = {
             "0": 1,
             "1": 1,
@@ -43,29 +77,32 @@ class GameState:
             "+10": 1,
             "x2": 1
         }
-        self.deck = cards.copy
+        if deck is None:
+            self.deck = self.cards.copy
+        else:
+            self.deck = deck
         self.players = []
+        self.analytics = analytics
         self.gameId = uuid.uuid4()
+        self.round = round
+        self.quit_count = 0
 
     def add_player(self, name, tolerance = 100):
-        player = {
-            "id": len(self.players) + 1,
-            "active": True,
-            "hand": {
-                "numbers": [],
-                "addition": [],
-                "multiplier": False,
-                "sc": False
-            },
-            "name": name,
-            "score": 0,
-            "tolerance": tolerance
-        }
+        player = Player(len(self.players) + 1, name, tolerance)
         self.players.append(player)
+    
+    def show_players(self):
+        for player in self.players:
+            player.show_player()
+    def set_analytics(self, choice: bool):
+        self.analytics = choice
+
+    def show_analytics(self):
+        return self.analytics
         
     def is_valid_card(self, card):
         if card.lower() == "b":
-            return True
+            return False
         elif card.lower() in self.deck and self.deck[card] > 0:
             return True
         else:
@@ -77,56 +114,14 @@ class GameState:
             if player.active:
                 active.append(player)
         return active
-    
 
+    def reset_hand(self, player_index):
+        for p in self.players:
+            if p.id == player_index:
+                p.reset_hand()
+                break
+        self.quit_count += 1
 
-quitCount = 0
-analyticsVisible = False
-
-def init():
-    global analyticsVisible
-    global players
-    global deck
-    createTable()
-    players = []
-    numberOfPlayers = input("Enter the number of players: ")
-    for i in range(int(numberOfPlayers)):
-        playerName = input(f"Player {i + 1} name: ")
-        player = {
-            "id": i + 1,
-            "active": True,
-            "hand": {
-                "numbers": [],
-                "addition": [],
-                "multiplier": False,
-                "sc": False
-            },
-            "name": playerName,
-            "score": 0,
-            "tolerance": 100
-        }
-        players.append(player)
-
-    hints = input("Do you want to play with failure percentages visible? (y/n): ")
-    if hints.lower() == "y":
-        analyticsVisible = True
-    else:
-        analyticsVisible = False
-    print()
-    print()
-    print("For each turn, input the following and click enter:")
-    print("  - For number cards, just type the number: 4")
-    print(
-        "  - For score modifier cards, type either a \"+\" or an \"x\" (without quotes) and then the number: +10 or x2")
-    print("  - For action cards, type the following: ")
-    print("    - Second Chance: sc")
-    print("    - *Freeze: fr")
-    print("    - *Flip Three: f3")
-    print("  - To bank points, type: b")
-    print()
-    print("*For Freeze and Flip Three, you must type the number of an active player to apply the action to")
-    print()
-    print()
 
 def main():
     global playing
@@ -197,7 +192,6 @@ def print_leaderboard(new=True):
     return currentScores
 
 def reshuffle():
-    global deck
     cardsRemaining = 0
     for card in deck:
         cardsRemaining += deck[card]
@@ -230,19 +224,6 @@ def score(p, update=True):
         p.__setitem__("score", score + existingScore)
         print(f"{p["name"]} scored {score} this round. Total: {existingScore + score}")
     return score
-
-def endRoundTurn(p):
-    print(f"Ending round for {p["name"]}")
-    p.__setitem__("active", False)
-    emptyHand = {
-        "numbers": [],
-        "addition": [],
-        "multiplier": False,
-        "sc": False
-    }
-    p.__setitem__("hand", emptyHand)
-    global quitCount
-    quitCount += 1
 
 def drawCard(p, flip=False):
     bustPercent = analytics(p)
@@ -319,7 +300,6 @@ def drawCard(p, flip=False):
         else:
             print("Try again.")
         drawCard(p)
-
 
 def secondChance(player):
     if player["hand"]["sc"] == True:
@@ -407,7 +387,7 @@ def flipThree():
         print("Try again. Not an active player: ")
         flipThree()
 
-def analytics(p):
+def do_analytics(p):
     cardsRemaining = 0
     bustCards = 0
     if p["hand"]["sc"] == True:
@@ -421,7 +401,6 @@ def analytics(p):
 
 def expectedValue(player):
     cardCount = 0
-    global deck
     for card in deck:
         cardCount += deck[card]
     if cardCount <= 0:
@@ -504,7 +483,7 @@ def updateEntry(id, result, appliedTo=None):
     except sqlite3.OperationalError as e:
         print(e)
 
-def createTable():
+def create_table():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute("""
@@ -527,6 +506,35 @@ def createTable():
     conn.commit()
     conn.close()
 
+
+
+
+
+
+def init(state):
+    create_table()
+    while True:
+        count_input = input("Enter the number of players: ")
+        try:
+            player_count = int(count_input)
+            if player_count > 0:
+                break
+            else:
+                raise ValueError
+        except ValueError:
+            print("Please enter a positive integer")
+    for i in range(int(player_count)):
+        name_input = input(f"Player {i + 1} name: ")
+        state.add_player(name_input)
+    hints = input("Do you want to play with failure percentages visible? (y/n): ")
+    if hints.lower() == "y":
+        state.set_analytics(True)
+    else:
+        state.set_analytics(False)
+
 if __name__ == "__main__":
-    init()
-    main()
+    game = GameState()
+    init(game)
+    var = input("Player to remove:")
+    game.reset_hand(var)
+    game.show_players()
