@@ -11,7 +11,6 @@
 #     - End Game
 
 import uuid
-import sqlite3
 import pathlib
 from dataclasses import dataclass, field
 
@@ -62,6 +61,7 @@ class Player:
         self.active = False
 
     def bust(self):
+        self.score.append(0)
         self.reset_hand()
         self.active = False
 
@@ -207,7 +207,7 @@ class GameState:
             cards_remaining += self.deck[card]
         if cards_remaining == 0:
             print("Reshuffle all cards not in hand")
-            deck = self.cards.copy()
+            self.deck = self.cards.copy()
             for p in self.players:
                 hand_numbers = p.hand.numbers
                 for number in hand_numbers:
@@ -228,7 +228,7 @@ class GameState:
                 if second_chance:
                     if p.hand.sc:
                         continue
-                print(f"{index}. {p.name}")
+                print(f"{index + 1}. {p.name}")
             while True:
                 target = input("Enter the number of your choice: ")
                 if target == "lb":
@@ -377,68 +377,7 @@ def game_round(game):
                     break
         return game.new_round()
 
-# def addEntry(player, reason, card, bustPercent, ev, counter, hand):
-#     global gameId
-#     leaderboard = players.copy()
-#     leaderboard.sort(reverse=True, key=myFunc)
-#     behindFirst = 0
-#     if counter is None:
-#         counter = 0
-#     for idx, p in enumerate(leaderboard):
-#         if player["name"] == p["name"]:
-#             behindFirst = idx
-#
-#     data = (str(gameId), player["name"], reason, card, behindFirst, bustPercent, ", ".join(hand), counter, ev, player["score"])
-#     try:
-#         with sqlite3.connect(DB_PATH) as conn:
-#             cur = conn.cursor()
-#             cur.execute('''
-#                 INSERT INTO turns
-#                 (gameId, player, reason, card, behindFirst, chanceOfBusting, hand, currentScore, expectedValue, leaderboardScore)
-#                 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-#             ''', data)
-#             id = cur.lastrowid
-#             conn.commit()
-#     except sqlite3.Error as e:
-#         print(e)
-#     return id
-#
-# def updateEntry(id, result, appliedTo=None):
-#     data = (result, appliedTo, id)
-#     sql = 'UPDATE turns SET result=?, appliedTo=? WHERE id=?'
-#     try:
-#         with sqlite3.connect(DB_PATH) as conn:
-#             cur = conn.cursor()
-#             cur.execute(sql, data)
-#             conn.commit()
-#     except sqlite3.OperationalError as e:
-#         print(e)
-#
-# def create_table():
-#     conn = sqlite3.connect(DB_PATH)
-#     cur = conn.cursor()
-#     cur.execute("""
-#         CREATE TABLE IF NOT EXISTS turns (
-#             id INTEGER PRIMARY KEY,
-#             gameId STRING,
-#             player STRING,
-#             reason STRING,
-#             card STRING,
-#             appliedTo STRING,
-#             behindFirst INTEGER,
-#             chanceOfBusting FLOAT,
-#             hand STRING,
-#             currentScore INTEGER,
-#             expectedValue FLOAT,
-#             leaderboardScore INTEGER,
-#             result STRING
-#         )
-#     """)
-#     conn.commit()
-#     conn.close()
-
 def init(game):
-    # create_table()
     while True:
         count_input = input("Enter the number of players: ")
         try:
